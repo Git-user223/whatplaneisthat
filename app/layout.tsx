@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DCA Window Watch",
-  description: "Live aircraft identification for the slice of sky outside your window.",
+  title: "whatplaneisthat? — Live Aircraft Dashboard",
+  description:
+    "Live aircraft identification for the slice of sky outside your window.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

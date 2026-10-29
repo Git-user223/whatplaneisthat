@@ -1,64 +1,1576 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Bookmark, ChevronRight, CircleDot, Compass, Crosshair, ExternalLink, Gauge, MapPin, Navigation, Plane, Radio, RotateCw, Save, Settings2, SlidersHorizontal, Sparkles, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUpRight,
+  BookOpen,
+  Globe2,
+  Maximize2,
+  Radar as RadarIcon,
+  ArrowUp,
+  Bookmark,
+  ChevronRight,
+  ChevronDown,
+  Compass,
+  MapPin,
+  Navigation,
+  Plane,
+  Radio,
+  RotateCw,
+  Save,
+  Settings2,
+  Trash2,
+  X,
+} from "lucide-react";
+import { Globe } from "@/components/globe";
+import { LocalAirspace } from "@/components/local-airspace";
+import { AircraftImage } from "@/components/aircraft-image";
+import {
+  type Aircraft,
+  type Config,
+  normalizeAngle,
+  haversineNm,
+  bearingTo,
+  destinationPoint,
+} from "@/lib/airspace";
+import { recordTrails, type FlightTrails } from "@/lib/flight-trails";
+import { Logbook } from "@/components/logbook";
+import {
+  HISTORY_KEY,
+  readHistory,
+  recordSightings,
+  type Sighting,
+} from "@/lib/sightings";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Aircraft = { hex:string; flight?:string; r?:string; t?:string; lat?:number; lon?:number; alt_baro?:number|"ground"; gs?:number; track?:number; baro_rate?:number; category?:string; squawk?:string; seen?:number; dst?:number; dir?:number };
-type Airport = { iata_code?:string; icao_code?:string; municipality?:string; name?:string };
-type FlightDetails = { aircraft?:{ type?:string; icao_type?:string; manufacturer?:string; registration?:string; registered_owner?:string; registered_owner_country_name?:string; url_photo?:string; url_photo_thumbnail?:string }|null; route?:{ airline?:{name?:string;country?:string}; origin?:Airport; destination?:Airport }|null };
-type Config = { lat:number; lon:number; bearing:number; width:number; range:number; minAltitude:number };
-type SavedView = { id:string; name:string; config:Config; updatedAt:number };
+type Airport = {
+  latitude?: number;
+  longitude?: number;
+  iata_code?: string;
+  icao_code?: string;
+  municipality?: string;
+  name?: string;
+};
+type FlightDetails = {
+  aircraft?: {
+    type?: string;
+    icao_type?: string;
+    manufacturer?: string;
+    registration?: string;
+    registered_owner?: string;
+    registered_owner_country_name?: string;
+    url_photo?: string;
+    url_photo_thumbnail?: string;
+  } | null;
+  route?: {
+    airline?: { name?: string; country?: string };
+    origin?: Airport;
+    destination?: Airport;
+  } | null;
+};
+type SavedView = {
+  id: string;
+  name: string;
+  config: Config;
+  updatedAt: number;
+};
 
-const DEFAULT_CONFIG:Config={lat:38.8512,lon:-77.0402,bearing:340,width:90,range:12,minAltitude:250};
-const DEMO:Aircraft[]=[{hex:"a4c8ee",flight:"AAL2134",r:"N408AN",t:"B738",alt_baro:2875,gs:186,track:164,baro_rate:-704,category:"A3",squawk:"4123",seen:.2},{hex:"a31cd2",flight:"JBU1247",r:"N298JB",t:"E190",alt_baro:4200,gs:211,track:348,baro_rate:1280,category:"A3",squawk:"5261",seen:.5}];
-const TYPE_NAMES:Record<string,[string,string]>={A319:["Airbus","A319"],A320:["Airbus","A320"],A321:["Airbus","A321"],A20N:["Airbus","A320neo"],A21N:["Airbus","A321neo"],B738:["Boeing","737-800"],B737:["Boeing","737"],B739:["Boeing","737-900"],B38M:["Boeing","737 MAX 8"],B39M:["Boeing","737 MAX 9"],CRJ7:["Bombardier","CRJ-700"],CRJ9:["Bombardier","CRJ-900"],E170:["Embraer","E170"],E75L:["Embraer","E175"],E190:["Embraer","E190"],C172:["Cessna","172 Skyhawk"],C208:["Cessna","208 Caravan"],H60:["Sikorsky","UH-60 Black Hawk"]};
+const DEFAULT_CONFIG: Config = {
+  lat: 38.8512,
+  lon: -77.0402,
+  bearing: 340,
+  width: 90,
+  range: 12,
+  minAltitude: 250,
+};
+const DEMO: Aircraft[] = [
+  {
+    hex: "a4c8ee",
+    flight: "AAL2134",
+    r: "N408AN",
+    t: "B738",
+    alt_baro: 2875,
+    gs: 186,
+    track: 164,
+    baro_rate: -704,
+    category: "A3",
+    squawk: "4123",
+    seen: 0.2,
+  },
+  {
+    hex: "a31cd2",
+    flight: "JBU1247",
+    r: "N298JB",
+    t: "E190",
+    alt_baro: 4200,
+    gs: 211,
+    track: 348,
+    baro_rate: 1280,
+    category: "A3",
+    squawk: "5261",
+    seen: 0.5,
+  },
+];
+const TYPE_NAMES: Record<string, [string, string]> = {
+  A319: ["Airbus", "A319"],
+  A320: ["Airbus", "A320"],
+  A321: ["Airbus", "A321"],
+  A20N: ["Airbus", "A320neo"],
+  A21N: ["Airbus", "A321neo"],
+  B738: ["Boeing", "737-800"],
+  B737: ["Boeing", "737"],
+  B739: ["Boeing", "737-900"],
+  B38M: ["Boeing", "737 MAX 8"],
+  B39M: ["Boeing", "737 MAX 9"],
+  CRJ7: ["Bombardier", "CRJ-700"],
+  CRJ9: ["Bombardier", "CRJ-900"],
+  E170: ["Embraer", "E170"],
+  E75L: ["Embraer", "E175"],
+  E190: ["Embraer", "E190"],
+  C172: ["Cessna", "172 Skyhawk"],
+  C208: ["Cessna", "208 Caravan"],
+  H60: ["Sikorsky", "UH-60 Black Hawk"],
+};
 
-function normalizeAngle(v:number){return((v+180)%360+360)%360-180}
-function haversineNm(a:number,b:number,c:number,d:number){const r=3440.065,p1=a*Math.PI/180,p2=c*Math.PI/180,dp=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180,x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*r*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
-function bearingTo(a:number,b:number,c:number,d:number){const p1=a*Math.PI/180,p2=c*Math.PI/180,dl=(d-b)*Math.PI/180,y=Math.sin(dl)*Math.cos(p2),x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);return(Math.atan2(y,x)*180/Math.PI+360)%360}
-function destinationPoint(lat:number,lon:number,bearing:number,distanceNm:number){const r=3440.065,d=distanceNm/r,b=bearing*Math.PI/180,p=lat*Math.PI/180,l=lon*Math.PI/180,p2=Math.asin(Math.sin(p)*Math.cos(d)+Math.cos(p)*Math.sin(d)*Math.cos(b)),l2=l+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(p),Math.cos(d)-Math.sin(p)*Math.sin(p2));return[p2*180/Math.PI,((l2*180/Math.PI+540)%360)-180] as [number,number]}
-function altitude(ac?:Aircraft){return typeof ac?.alt_baro==="number"?ac.alt_baro:0}
-function callsign(v?:string){return v?.trim()||"Unknown flight"}
-function compass(v?:number){if(v==null)return"—";const l=["N","NE","E","SE","S","SW","W","NW"];return`${l[Math.round(v/45)%8]} ${Math.round(v)}°`}
-function climbState(r?:number){if(!r||Math.abs(r)<160)return{label:"Level",icon:ChevronRight};return r>0?{label:"Climbing",icon:ArrowUp}:{label:"Descending",icon:ArrowDown}}
-function relativeTime(date:Date|null){if(!date)return"Waiting for signal";const s=Math.max(0,Math.round((Date.now()-date.getTime())/1000));return s<2?"just now":`${s}s ago`}
-
-function PlaneModel({aircraft,color="#f05232"}:{aircraft?:Aircraft;color?:string}){
- const heli=aircraft?.t?.startsWith("H")||aircraft?.category==="A7";
- if(heli)return <svg viewBox="0 0 560 260" className="plane-model" role="img" aria-label="Helicopter model illustration"><g transform="translate(280 130) rotate(-8) translate(-280 -130)"><path d="M118 142h324" stroke="currentColor" strokeWidth="9" strokeLinecap="round" opacity=".16"/><path d="M266 52h24v72h-24z" fill={color}/><path d="M92 46h372" stroke={color} strokeWidth="10" strokeLinecap="round"/><path d="M137 128c28-54 84-67 157-53 48 9 78 36 82 77 3 31-14 51-52 53H177c-55 0-73-30-40-77Z" fill="#f8fbff" stroke="#b8c3cc" strokeWidth="3"/><path d="M327 89c27 12 43 31 48 59h-76l-12-65c15 0 28 2 40 6Z" fill="#17232c"/><path d="M376 151l124-26 8 12-111 52-21-38Z" fill="#e5eaf0" stroke="#a8b4be" strokeWidth="3"/><circle cx="497" cy="132" r="29" fill="none" stroke={color} strokeWidth="5"/><path d="M497 103v58M468 132h58" stroke={color} strokeWidth="4"/><path d="M170 210h189" stroke="#5d6870" strokeWidth="7" strokeLinecap="round"/></g></svg>;
- return <svg viewBox="0 0 640 280" className="plane-model" role="img" aria-label="Aircraft model illustration"><defs><linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff"/><stop offset=".72" stopColor="#e9eef2"/><stop offset="1" stopColor="#c5cfd6"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="12" stdDeviation="9" floodColor="#10202d" floodOpacity=".22"/></filter></defs><ellipse cx="320" cy="237" rx="215" ry="16" fill="#163047" opacity=".12"/><g filter="url(#shadow)"><path d="M65 153c5-18 24-30 53-34l137-18L363 24c11-8 29-12 45-10l-54 82 144-7c34-2 65 11 82 33l14 18-16 17c-21 23-50 33-88 29l-137-13 42 82c-15 3-31-2-42-12l-102-79-131-5c-31-1-52-10-55-25Z" fill="url(#body)" stroke="#9ba9b4" strokeWidth="3"/><path d="M76 135c85 11 171 10 258 4 115-7 197-3 249 4l-5 14c-102-6-185-4-250 4-100 12-184 7-251-8Z" fill={color}/><path d="M492 94l-30-60c15 2 26 8 33 18l35 42Z" fill={color}/><path d="M132 118l-16-49c15-1 29 5 36 16l24 27Z" fill={color}/>{[0,1,2,3,4,5,6,7].map(n=><rect key={n} x={208+n*31} y="115" width="15" height="8" rx="4" fill="#263c4d"/>)}<path d="M522 109c30 3 49 12 59 26l-70-4Z" fill="#243c4e"/><ellipse cx="359" cy="183" rx="35" ry="15" fill="#8c9ba5"/><ellipse cx="359" cy="181" rx="26" ry="9" fill="#263944"/><ellipse cx="230" cy="177" rx="31" ry="14" fill="#8c9ba5"/><ellipse cx="230" cy="175" rx="23" ry="8" fill="#263944"/></g></svg>
+function altitude(ac?: Aircraft) {
+  return typeof ac?.alt_baro === "number" ? ac.alt_baro : 0;
+}
+function callsign(v?: string) {
+  return v?.trim() || "Unknown flight";
+}
+function compass(v?: number) {
+  if (v == null) return "—";
+  const l = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return `${l[Math.round(v / 45) % 8]} ${Math.round(v)}°`;
+}
+function climbState(r?: number) {
+  if (!r || Math.abs(r) < 160) return { label: "Level", icon: ChevronRight };
+  return r > 0
+    ? { label: "Climbing", icon: ArrowUp }
+    : { label: "Descending", icon: ArrowDown };
+}
+function relativeTime(date: Date | null, now: number) {
+  if (!date) return "Waiting for signal";
+  const s = Math.max(0, Math.round((now - date.getTime()) / 1000));
+  return s < 2 ? "just now" : `${s}s ago`;
 }
 
-function Radar({aircraft,config,selectedHex,onSelect}:{aircraft:Aircraft[];config:Config;selectedHex?:string;onSelect:(a:Aircraft)=>void}){return <div className="radar" aria-label="Aircraft in your viewing cone"><div className="radar-ring radar-ring-1"/><div className="radar-ring radar-ring-2"/><div className="radar-ring radar-ring-3"/><div className="radar-axis radar-axis-x"/><div className="radar-axis radar-axis-y"/><div className="view-cone" style={{transform:`rotate(${config.bearing-90}deg)`,clipPath:`polygon(0 50%,100% ${50-config.width/3}%,100% ${50+config.width/3}%)`}}/><div className="home-dot"><span/></div>{aircraft.slice(0,9).map((ac,i)=>{const d=ac.lat!=null&&ac.lon!=null?haversineNm(config.lat,config.lon,ac.lat,ac.lon):Math.min(config.range,2+i*1.3),b=ac.lat!=null&&ac.lon!=null?bearingTo(config.lat,config.lon,ac.lat,ac.lon):(config.bearing+i*18)%360,r=Math.min(43,Math.max(8,d/config.range*43)),a=(b-90)*Math.PI/180,x=50+Math.cos(a)*r,y=50+Math.sin(a)*r;return <button key={ac.hex} className={`radar-plane ${selectedHex===ac.hex?"selected":""}`} style={{left:`${x}%`,top:`${y}%`,transform:`translate(-50%,-50%) rotate(${ac.track??0}deg)`}} onClick={()=>onSelect(ac)} aria-label={`Select ${callsign(ac.flight)}`}><Navigation size={14} fill="currentColor"/></button>})}<div className="radar-label north">N</div><div className="radar-label range-label">{config.range} NM</div></div>}
-
-function MapPicker({value,onChange,onUseLocation}:{value:Config;onChange:(next:Config)=>void;onUseLocation:(done?:(next:Config)=>void)=>void}){
- const mapNode=useRef<HTMLDivElement|null>(null),mapRef=useRef<import("leaflet").Map|null>(null),valueRef=useRef(value),changeRef=useRef(onChange),layersRef=useRef<{pin:import("leaflet").Marker;handle:import("leaflet").Marker;cone:import("leaflet").Polygon;line:import("leaflet").Polyline}|null>(null);
- valueRef.current=value;changeRef.current=onChange;
- const sectorPoints=(c:Config)=>{const points:[number,number][]=[[c.lat,c.lon]];for(let i=0;i<=20;i++)points.push(destinationPoint(c.lat,c.lon,c.bearing-c.width/2+c.width*i/20,Math.min(3.2,Math.max(1.6,c.range*.28))));return points};
- const syncLayers=(c:Config)=>{const layers=layersRef.current;if(!layers)return;const end=destinationPoint(c.lat,c.lon,c.bearing,Math.min(3.2,Math.max(1.6,c.range*.28)));layers.pin.setLatLng([c.lat,c.lon]);layers.handle.setLatLng(end);layers.cone.setLatLngs(sectorPoints(c));layers.line.setLatLngs([[c.lat,c.lon],end])};
- useEffect(()=>{let cancelled=false;(async()=>{if(!mapNode.current||mapRef.current)return;const L=await import("leaflet");if(cancelled||!mapNode.current)return;const c=valueRef.current,map=L.map(mapNode.current,{zoomControl:true,attributionControl:true}).setView([c.lat,c.lon],13);mapRef.current=map;L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);const pinIcon=L.divIcon({className:"map-pin-icon",html:'<div class="map-pin-pulse"></div><div class="map-pin-dot"><span></span></div>',iconSize:[42,48],iconAnchor:[21,39]}),handleIcon=L.divIcon({className:"bearing-handle-icon",html:'<div class="bearing-handle"><span>DRAG</span><b>↗</b></div>',iconSize:[50,50],iconAnchor:[25,25]}),end=destinationPoint(c.lat,c.lon,c.bearing,Math.min(3.2,Math.max(1.6,c.range*.28))),cone=L.polygon(sectorPoints(c),{color:"#ed583b",weight:1.5,fillColor:"#ed583b",fillOpacity:.22,interactive:false}).addTo(map),line=L.polyline([[c.lat,c.lon],end],{color:"#ed583b",weight:2,dashArray:"5 6",interactive:false}).addTo(map),pin=L.marker([c.lat,c.lon],{icon:pinIcon,draggable:true,zIndexOffset:1000}).addTo(map),handle=L.marker(end,{icon:handleIcon,draggable:true,zIndexOffset:900}).addTo(map);layersRef.current={pin,handle,cone,line};pin.on("drag",e=>{const p=(e.target as import("leaflet").Marker).getLatLng(),next={...valueRef.current,lat:+p.lat.toFixed(6),lon:+p.lng.toFixed(6)};changeRef.current(next);syncLayers(next)});pin.on("dragend",()=>map.panTo(pin.getLatLng()));handle.on("drag",e=>{const p=(e.target as import("leaflet").Marker).getLatLng(),current=valueRef.current,next={...current,bearing:Math.round(bearingTo(current.lat,current.lon,p.lat,p.lng))};changeRef.current(next);syncLayers(next)});map.on("click",e=>{const next={...valueRef.current,lat:+e.latlng.lat.toFixed(6),lon:+e.latlng.lng.toFixed(6)};changeRef.current(next);syncLayers(next)});setTimeout(()=>map.invalidateSize(),50)})();return()=>{cancelled=true;mapRef.current?.remove();mapRef.current=null;layersRef.current=null}},[]);
- useEffect(()=>syncLayers(value),[value.lat,value.lon,value.bearing,value.width,value.range]);
- return <div className="map-picker-shell"><div ref={mapNode} className="map-picker"/><div className="map-help"><span><i className="pin-key"/>Click map or drag pin to move</span><span><i className="angle-key"/>Drag arrow to aim view</span></div><button className="map-locate" onClick={e=>{e.stopPropagation();onUseLocation(next=>mapRef.current?.setView([next.lat,next.lon],14))}}><MapPin size={15}/> Use my location</button><div className="map-bearing"><small>WINDOW FACING</small><strong>{compass(value.bearing)}</strong><span>{value.width}° view</span></div></div>
+function PlaneModel({
+  aircraft,
+  color = "#f05232",
+}: {
+  aircraft?: Aircraft;
+  color?: string;
+}) {
+  const heli = aircraft?.t?.startsWith("H") || aircraft?.category === "A7";
+  if (heli)
+    return (
+      <svg
+        viewBox="0 0 560 260"
+        className="plane-model"
+        role="img"
+        aria-label="Helicopter model illustration"
+      >
+        <g transform="translate(280 130) rotate(-8) translate(-280 -130)">
+          <path
+            d="M118 142h324"
+            stroke="currentColor"
+            strokeWidth="9"
+            strokeLinecap="round"
+            opacity=".16"
+          />
+          <path d="M266 52h24v72h-24z" fill={color} />
+          <path
+            d="M92 46h372"
+            stroke={color}
+            strokeWidth="10"
+            strokeLinecap="round"
+          />
+          <path
+            d="M137 128c28-54 84-67 157-53 48 9 78 36 82 77 3 31-14 51-52 53H177c-55 0-73-30-40-77Z"
+            fill="#f8fbff"
+            stroke="#b8c3cc"
+            strokeWidth="3"
+          />
+          <path
+            d="M327 89c27 12 43 31 48 59h-76l-12-65c15 0 28 2 40 6Z"
+            fill="#17232c"
+          />
+          <path
+            d="M376 151l124-26 8 12-111 52-21-38Z"
+            fill="#e5eaf0"
+            stroke="#a8b4be"
+            strokeWidth="3"
+          />
+          <circle
+            cx="497"
+            cy="132"
+            r="29"
+            fill="none"
+            stroke={color}
+            strokeWidth="5"
+          />
+          <path d="M497 103v58M468 132h58" stroke={color} strokeWidth="4" />
+          <path
+            d="M170 210h189"
+            stroke="#5d6870"
+            strokeWidth="7"
+            strokeLinecap="round"
+          />
+        </g>
+      </svg>
+    );
+  return (
+    <svg
+      viewBox="0 0 640 280"
+      className="plane-model"
+      role="img"
+      aria-label="Aircraft model illustration"
+    >
+      <defs>
+        <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff" />
+          <stop offset=".72" stopColor="#e9eef2" />
+          <stop offset="1" stopColor="#c5cfd6" />
+        </linearGradient>
+      </defs>
+      <ellipse
+        cx="320"
+        cy="237"
+        rx="215"
+        ry="16"
+        fill="#163047"
+        opacity=".12"
+      />
+      <g>
+        <path
+          d="M65 153c5-18 24-30 53-34l137-18L363 24c11-8 29-12 45-10l-54 82 144-7c34-2 65 11 82 33l14 18-16 17c-21 23-50 33-88 29l-137-13 42 82c-15 3-31-2-42-12l-102-79-131-5c-31-1-52-10-55-25Z"
+          fill="url(#body)"
+          stroke="#9ba9b4"
+          strokeWidth="3"
+        />
+        <path
+          d="M76 135c85 11 171 10 258 4 115-7 197-3 249 4l-5 14c-102-6-185-4-250 4-100 12-184 7-251-8Z"
+          fill={color}
+        />
+        <path d="M492 94l-30-60c15 2 26 8 33 18l35 42Z" fill={color} />
+        <path d="M132 118l-16-49c15-1 29 5 36 16l24 27Z" fill={color} />
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => (
+          <rect
+            key={n}
+            x={208 + n * 31}
+            y="115"
+            width="15"
+            height="8"
+            rx="4"
+            fill="#263c4d"
+          />
+        ))}
+        <path d="M522 109c30 3 49 12 59 26l-70-4Z" fill="#243c4e" />
+        <ellipse cx="359" cy="183" rx="35" ry="15" fill="#8c9ba5" />
+        <ellipse cx="359" cy="181" rx="26" ry="9" fill="#263944" />
+        <ellipse cx="230" cy="177" rx="31" ry="14" fill="#8c9ba5" />
+        <ellipse cx="230" cy="175" rx="23" ry="8" fill="#263944" />
+      </g>
+    </svg>
+  );
 }
 
-export default function Home(){
- const[config,setConfig]=useState<Config>(DEFAULT_CONFIG),[draft,setDraft]=useState<Config>(DEFAULT_CONFIG),[aircraft,setAircraft]=useState<Aircraft[]>([]),[selected,setSelected]=useState<Aircraft|null>(null),[details,setDetails]=useState<FlightDetails>({}),[status,setStatus]=useState<"connecting"|"live"|"demo">("connecting"),[settingsOpen,setSettingsOpen]=useState(false),[lastUpdate,setLastUpdate]=useState<Date|null>(null),[clock,setClock]=useState(Date.now()),[sound,setSound]=useState(false),[savedViews,setSavedViews]=useState<SavedView[]>([]),[viewName,setViewName]=useState(""),[activeViewId,setActiveViewId]=useState<string|null>(null);const seen=useRef(new Set<string>()),selectedRef=useRef<string|null>(null),audioRef=useRef<AudioContext|null>(null);
- useEffect(()=>{const s=localStorage.getItem("dca-window-config"),views=localStorage.getItem("dca-saved-views");if(s)try{const p={...DEFAULT_CONFIG,...JSON.parse(s)};setConfig(p);setDraft(p)}catch{}if(views)try{setSavedViews(JSON.parse(views))}catch{}},[]);
- useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(id)},[]);
- const isInView=useCallback((ac:Aircraft,c:Config)=>{if(ac.lat==null||ac.lon==null)return false;return haversineNm(c.lat,c.lon,ac.lat,ac.lon)<=c.range&&Math.abs(normalizeAngle(bearingTo(c.lat,c.lon,ac.lat,ac.lon)-c.bearing))<=c.width/2&&altitude(ac)>=c.minAltitude},[]);
- const fetchAircraft=useCallback(async()=>{try{const r=await fetch(`/api/aircraft?lat=${config.lat}&lon=${config.lon}&range=${Math.max(config.range,5)}`,{cache:"no-store"});if(!r.ok)throw 0;const d=await r.json() as{ac?:Aircraft[]},near=(d.ac??[]).filter(a=>a.lat!=null&&a.lon!=null&&altitude(a)>=config.minAltitude).sort((a,b)=>(a.dst??99)-(b.dst??99)),visible=near.filter(a=>isInView(a,config)),newcomers=visible.filter(a=>!seen.current.has(a.hex));visible.forEach(a=>seen.current.add(a.hex));setAircraft(visible);const next=newcomers[0]??visible.find(a=>a.hex===selectedRef.current)??visible[0]??null;if(next&&next.hex!==selectedRef.current){selectedRef.current=next.hex;setSelected(next);if(sound&&audioRef.current){const ctx=audioRef.current,o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(620,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(880,ctx.currentTime+.16);g.gain.setValueAtTime(.0001,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.08,ctx.currentTime+.02);g.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.25);o.connect(g).connect(ctx.destination);o.start();o.stop(ctx.currentTime+.27)}}else if(next)setSelected(next);setStatus("live");setLastUpdate(new Date())}catch{const fallback=DEMO.map((a,i)=>({...a,lat:config.lat+.02+i*.015,lon:config.lon+.003-i*.01}));setAircraft(fallback);if(!selectedRef.current){selectedRef.current=fallback[0].hex;setSelected(fallback[0])}setStatus("demo");setLastUpdate(new Date())}},[config,isInView,sound]);
- useEffect(()=>{seen.current.clear();selectedRef.current=null;setSelected(null);fetchAircraft();const id=window.setInterval(fetchAircraft,10000);return()=>clearInterval(id)},[fetchAircraft]);
- useEffect(()=>{if(!selected){setDetails({});return}const c=new AbortController();fetch(`/api/details?callsign=${encodeURIComponent(callsign(selected.flight))}&registration=${encodeURIComponent(selected.r??"")}`,{signal:c.signal}).then(r=>r.ok?r.json():Promise.reject()).then(setDetails).catch(()=>setDetails({}));return()=>c.abort()},[selected?.hex]);
- const select=(a:Aircraft)=>{selectedRef.current=a.hex;setSelected(a)},known=selected?.t?TYPE_NAMES[selected.t]:undefined,manufacturer=details.aircraft?.manufacturer||known?.[0]||"Aircraft",model=details.aircraft?.type||known?.[1]||selected?.t||"Model unknown",motion=climbState(selected?.baro_rate),MotionIcon=motion.icon,origin=details.route?.origin,destination=details.route?.destination;
- const save=()=>{const s={...draft,range:Math.max(1,Math.min(50,draft.range)),width:Math.max(10,Math.min(180,draft.width))};setConfig(s);localStorage.setItem("dca-window-config",JSON.stringify(s));setSettingsOpen(false)};
- const storeViews=(next:SavedView[])=>{setSavedViews(next);localStorage.setItem("dca-saved-views",JSON.stringify(next))};
- const saveNamedView=()=>{const name=viewName.trim()||`Window view ${savedViews.length+1}`,existing=savedViews.find(v=>v.id===activeViewId);if(existing){storeViews(savedViews.map(v=>v.id===existing.id?{...v,name,config:{...draft},updatedAt:Date.now()}:v))}else{const item={id:crypto.randomUUID(),name,config:{...draft},updatedAt:Date.now()};storeViews([...savedViews,item]);setActiveViewId(item.id)}setViewName(name)};
- const loadSavedView=(view:SavedView)=>{setDraft({...view.config});setViewName(view.name);setActiveViewId(view.id)};
- const deleteSavedView=(id:string)=>{storeViews(savedViews.filter(v=>v.id!==id));if(activeViewId===id){setActiveViewId(null);setViewName("")}};
- const useLocation=(done?:(next:Config)=>void)=>navigator.geolocation?.getCurrentPosition(({coords})=>setDraft(d=>{const next={...d,lat:+coords.latitude.toFixed(6),lon:+coords.longitude.toFixed(6)};done?.(next);return next}));
- return <main className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><Plane size={19} fill="currentColor"/></div><div><strong>WINDOW<span>WATCH</span></strong><small>DCA AIRSPACE</small></div></div><div className="live-pill"><i className={status==="live"?"pulse":""}/><span>{status==="live"?"LIVE ADS-B":status==="demo"?"DEMO SIGNAL":"CONNECTING"}</span><em>Updated {relativeTime(lastUpdate)}</em></div><div className="header-actions"><button className={sound?"active":""} onClick={()=>{const next=!sound;if(next&&!audioRef.current)audioRef.current=new AudioContext();audioRef.current?.resume();setSound(next)}}><Radio size={17}/><span>Alerts</span></button><button onClick={()=>{setDraft(config);setActiveViewId(null);setViewName("");setSettingsOpen(true)}}><Settings2 size={18}/><span>Views{savedViews.length?` · ${savedViews.length}`:""}</span></button></div></header>
- <section className="dashboard"><aside className="radar-panel"><div className="section-kicker"><span>YOUR SKY</span><button onClick={fetchAircraft} aria-label="Refresh aircraft"><RotateCw size={14}/></button></div><Radar aircraft={aircraft} config={config} selectedHex={selected?.hex} onSelect={select}/><div className="view-summary"><Compass size={16}/><div><small>Window facing</small><strong>{compass(config.bearing)}</strong></div><span>{config.width}° view</span></div><div className="nearby-title"><span>IN VIEW</span><em>{aircraft.length}</em></div><div className="nearby-list">{aircraft.length===0?<div className="empty-list"><Sparkles size={18}/><span>Your view is clear</span><small>Watching for the next aircraft</small></div>:aircraft.slice(0,5).map(ac=><button key={ac.hex} className={selected?.hex===ac.hex?"active":""} onClick={()=>select(ac)}><div className="mini-plane"><Plane size={16} style={{transform:`rotate(${(ac.track??0)-45}deg)`}}/></div><div><strong>{callsign(ac.flight)}</strong><small>{ac.t||"Unknown type"} · {ac.r||ac.hex.toUpperCase()}</small></div><span><b>{altitude(ac).toLocaleString()}</b> ft</span></button>)}</div><div className="data-credit">Position data by <a href="https://www.adsb.lol" target="_blank" rel="noreferrer">adsb.lol <ExternalLink size={10}/></a></div></aside>
- <section className="hero-panel"><div className="sky-grid"/><div className="hero-topline"><div><span className="eyebrow">MOST RECENT IN VIEW</span><div className="signal-line"><i/> Signal acquired · {selected?.seen!=null?`${selected.seen.toFixed(1)}s old`:"tracking"}</div></div><div className="track-badge"><Navigation size={14}/>{compass(selected?.track)}</div></div>{selected?<><div className="identity"><div><h1>{callsign(selected.flight)}</h1><p>{details.route?.airline?.name||details.aircraft?.registered_owner||"Live aircraft"}</p></div><div className="registration"><small>REGISTRATION</small><strong>{selected.r||"—"}</strong></div></div><div className="model-stage"><div className="model-label"><span>{manufacturer}</span><strong>{model}</strong><small>ICAO TYPE · {selected.t||details.aircraft?.icao_type||"UNKNOWN"}</small></div><PlaneModel aircraft={selected}/><div className="orientation"><Compass size={15}/><span>Heading {Math.round(selected.track??0)}°</span></div></div><div className="route-card"><div className="airport"><small>FROM</small><strong>{origin?.iata_code||origin?.icao_code||"—"}</strong><span>{origin?.municipality||"Route pending"}</span></div><div className="route-line"><Plane size={18} fill="currentColor"/><span/><em>{selected.gs?`${Math.round(selected.gs)} kt`:"in flight"}</em></div><div className="airport right"><small>TO</small><strong>{destination?.iata_code||destination?.icao_code||"—"}</strong><span>{destination?.municipality||"Route pending"}</span></div></div><div className="stats-grid"><div><span className="stat-icon coral"><Gauge size={18}/></span><p><small>GROUND SPEED</small><strong>{selected.gs?Math.round(selected.gs):"—"} <em>kt</em></strong></p></div><div><span className="stat-icon blue"><ArrowUp size={18}/></span><p><small>ALTITUDE</small><strong>{altitude(selected).toLocaleString()} <em>ft</em></strong></p></div><div><span className="stat-icon gold"><MotionIcon size={18}/></span><p><small>VERTICAL</small><strong>{motion.label}</strong><em>{selected.baro_rate?`${Math.abs(selected.baro_rate).toLocaleString()} ft/min`:"steady"}</em></p></div><div><span className="stat-icon green"><Crosshair size={18}/></span><p><small>DISTANCE</small><strong>{selected.lat!=null&&selected.lon!=null?haversineNm(config.lat,config.lon,selected.lat,selected.lon).toFixed(1):"—"} <em>nm</em></strong></p></div></div></>:<div className="clear-sky"><div className="scan-orbit"><Plane size={34}/></div><span>SCANNING YOUR VIEW</span><h1>Clear sky, for now.</h1><p>The next aircraft to enter your window view will appear here automatically.</p><button onClick={()=>setSettingsOpen(true)}><SlidersHorizontal size={16}/> Adjust viewing area</button></div>}</section>
- <aside className="details-panel"><div className="section-kicker"><span>AIRCRAFT FILE</span><CircleDot size={14}/></div>{selected?<><div className="photo-card">{details.aircraft?.url_photo?<img src={details.aircraft.url_photo} alt={`${manufacturer} ${model}`}/>:<div className="photo-placeholder"><PlaneModel aircraft={selected} color="#244d6b"/></div>}<span>LIVE MATCH</span></div><div className="fact-list"><div><small>Manufacturer</small><strong>{manufacturer}</strong></div><div><small>Model</small><strong>{model}</strong></div><div><small>Operator / owner</small><strong>{details.aircraft?.registered_owner||details.route?.airline?.name||"Not published"}</strong></div><div><small>Registered in</small><strong>{details.aircraft?.registered_owner_country_name||"—"}</strong></div><div><small>ICAO hex</small><strong className="mono">{selected.hex.toUpperCase()}</strong></div><div><small>Squawk</small><strong className="mono">{selected.squawk||"—"}</strong></div></div><div className="interesting"><Sparkles size={16}/><div><strong>{altitude(selected)<5000?"Low and close":"Passing overhead"}</strong><p>{altitude(selected)<5000?"This aircraft is low enough to be especially visible from your configured viewpoint.":"Its position is inside your viewing cone, though haze and clouds can affect visibility."}</p></div></div></>:<div className="file-empty"><Plane size={26}/><p>Aircraft details will load when a flight enters your view.</p></div>}<div className="privacy-note">Your exact window location is stored only in this browser.</div></aside></section>
- {settingsOpen&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settings-modal map-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="modal-header"><div><span>VIEW CALIBRATION</span><h2 id="settings-title">Place your window view</h2><p>Put the pin at your window, then aim the orange viewing cone toward the sky you can see.</p></div><button onClick={()=>setSettingsOpen(false)} aria-label="Close settings"><X/></button></div>{savedViews.length>0&&<div className="saved-views"><div className="saved-views-title"><Bookmark size={14}/><span>SAVED VIEWS</span></div><div className="saved-view-list">{savedViews.map(view=><div key={view.id} className={activeViewId===view.id?"active":""}><button className="saved-view-load" onClick={()=>loadSavedView(view)}><strong>{view.name}</strong><span>{compass(view.config.bearing)} · {view.config.width}° · {view.config.range} NM</span></button><button className="saved-view-delete" onClick={()=>deleteSavedView(view.id)} aria-label={`Delete ${view.name}`}><Trash2 size={13}/></button></div>)}</div></div>}<MapPicker value={draft} onChange={setDraft} onUseLocation={useLocation}/><div className="control-grid"><label>VIEW WIDTH<span><input type="number" min="10" max="180" value={draft.width} onChange={e=>setDraft({...draft,width:+e.target.value})}/> degrees</span></label><label>VISIBLE RANGE<span><input type="number" min="1" max="50" value={draft.range} onChange={e=>setDraft({...draft,range:+e.target.value})}/> nautical miles</span></label><label>MINIMUM ALTITUDE<span><input type="number" min="0" step="100" value={draft.minAltitude} onChange={e=>setDraft({...draft,minAltitude:+e.target.value})}/> feet</span></label></div><div className="save-view-row"><div><label htmlFor="view-name">NAME THIS VIEW</label><input id="view-name" value={viewName} onChange={e=>setViewName(e.target.value)} placeholder="e.g. Living room window" onKeyDown={e=>{if(e.key==="Enter")saveNamedView()}}/></div><button onClick={saveNamedView}><Save size={15}/>{activeViewId?"Update saved view":"Save as a view"}</button></div><div className="modal-tip"><Navigation size={18}/><p><strong>How to aim:</strong> drag the orange arrow until the cone points out through your window. Widen the view if you can see a broad stretch of sky.</p></div><div className="modal-actions"><button onClick={()=>{setDraft(DEFAULT_CONFIG);setActiveViewId(null);setViewName("")}}>Reset to DCA</button><button className="primary" onClick={save}>Use this view</button></div></section></div>}</main>
+function sectorPoints(c: Config) {
+  const points: [number, number][] = [[c.lat, c.lon]];
+  for (let i = 0; i <= 20; i++)
+    points.push(
+      destinationPoint(
+        c.lat,
+        c.lon,
+        c.bearing - c.width / 2 + (c.width * i) / 20,
+        Math.min(3.2, Math.max(1.6, c.range * 0.28)),
+      ),
+    );
+  return points;
+}
+function MapPicker({
+  value,
+  onChange,
+  onUseLocation,
+}: {
+  value: Config;
+  onChange: (next: Config) => void;
+  onUseLocation: (done?: (next: Config) => void) => void;
+}) {
+  const mapNode = useRef<HTMLDivElement | null>(null),
+    mapRef = useRef<import("leaflet").Map | null>(null),
+    valueRef = useRef(value),
+    changeRef = useRef(onChange),
+    layersRef = useRef<{
+      pin: import("leaflet").Marker;
+      handle: import("leaflet").Marker;
+      cone: import("leaflet").Polygon;
+      line: import("leaflet").Polyline;
+    } | null>(null);
+  useEffect(() => {
+    valueRef.current = value;
+    changeRef.current = onChange;
+  }, [value, onChange]);
+  const syncLayers = useCallback((c: Config) => {
+    const layers = layersRef.current;
+    if (!layers) return;
+    const end = destinationPoint(
+      c.lat,
+      c.lon,
+      c.bearing,
+      Math.min(3.2, Math.max(1.6, c.range * 0.28)),
+    );
+    layers.pin.setLatLng([c.lat, c.lon]);
+    layers.handle.setLatLng(end);
+    layers.cone.setLatLngs(sectorPoints(c));
+    layers.line.setLatLngs([[c.lat, c.lon], end]);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!mapNode.current || mapRef.current) return;
+      const L = await import("leaflet");
+      if (cancelled || !mapNode.current) return;
+      const c = valueRef.current,
+        map = L.map(mapNode.current, {
+          zoomControl: true,
+          attributionControl: true,
+        }).setView([c.lat, c.lon], 13);
+      mapRef.current = map;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+      const pinIcon = L.divIcon({
+          className: "map-pin-icon",
+          html: '<div class="map-pin-pulse"></div><div class="map-pin-dot"><span></span></div>',
+          iconSize: [42, 48],
+          iconAnchor: [21, 39],
+        }),
+        handleIcon = L.divIcon({
+          className: "bearing-handle-icon",
+          html: '<div class="bearing-handle"><span>DRAG</span><b>↗</b></div>',
+          iconSize: [50, 50],
+          iconAnchor: [25, 25],
+        }),
+        end = destinationPoint(
+          c.lat,
+          c.lon,
+          c.bearing,
+          Math.min(3.2, Math.max(1.6, c.range * 0.28)),
+        ),
+        cone = L.polygon(sectorPoints(c), {
+          color: "#ed583b",
+          weight: 1.5,
+          fillColor: "#ed583b",
+          fillOpacity: 0.22,
+          interactive: false,
+        }).addTo(map),
+        line = L.polyline([[c.lat, c.lon], end], {
+          color: "#ed583b",
+          weight: 2,
+          dashArray: "5 6",
+          interactive: false,
+        }).addTo(map),
+        pin = L.marker([c.lat, c.lon], {
+          icon: pinIcon,
+          draggable: true,
+          zIndexOffset: 1000,
+        }).addTo(map),
+        handle = L.marker(end, {
+          icon: handleIcon,
+          draggable: true,
+          zIndexOffset: 900,
+        }).addTo(map);
+      layersRef.current = { pin, handle, cone, line };
+      pin.on("drag", (e) => {
+        const p = (e.target as import("leaflet").Marker).getLatLng(),
+          next = {
+            ...valueRef.current,
+            lat: +p.lat.toFixed(6),
+            lon: +p.lng.toFixed(6),
+          };
+        changeRef.current(next);
+        syncLayers(next);
+      });
+      pin.on("dragend", () => map.panTo(pin.getLatLng()));
+      handle.on("drag", (e) => {
+        const p = (e.target as import("leaflet").Marker).getLatLng(),
+          current = valueRef.current,
+          next = {
+            ...current,
+            bearing: Math.round(
+              bearingTo(current.lat, current.lon, p.lat, p.lng),
+            ),
+          };
+        changeRef.current(next);
+        syncLayers(next);
+      });
+      map.on("click", (e) => {
+        const next = {
+          ...valueRef.current,
+          lat: +e.latlng.lat.toFixed(6),
+          lon: +e.latlng.lng.toFixed(6),
+        };
+        changeRef.current(next);
+        syncLayers(next);
+      });
+      setTimeout(() => {
+        if (mapRef.current === map) map.invalidateSize();
+      }, 50);
+    })();
+    return () => {
+      cancelled = true;
+      mapRef.current?.remove();
+      mapRef.current = null;
+      layersRef.current = null;
+    };
+  }, [syncLayers]);
+  useEffect(() => syncLayers(value), [value, syncLayers]);
+  return (
+    <div className="map-picker-shell">
+      <div ref={mapNode} className="map-picker" />
+      <div className="map-help">
+        <span>
+          <i className="pin-key" />
+          Click map or drag pin to move
+        </span>
+        <span>
+          <i className="angle-key" />
+          Drag arrow to aim view
+        </span>
+      </div>
+      <button
+        className="map-locate"
+        onClick={(e) => {
+          e.stopPropagation();
+          onUseLocation((next) =>
+            mapRef.current?.setView([next.lat, next.lon], 14),
+          );
+        }}
+      >
+        <MapPin size={15} /> Use my location
+      </button>
+      <div className="map-bearing">
+        <small>WINDOW FACING</small>
+        <strong>{compass(value.bearing)}</strong>
+        <span>{value.width}° view</span>
+      </div>
+    </div>
+  );
+}
+
+export default function Home() {
+  const [config, setConfig] = useState<Config>(DEFAULT_CONFIG),
+    [draft, setDraft] = useState<Config>(DEFAULT_CONFIG),
+    [aircraft, setAircraft] = useState<Aircraft[]>([]),
+    [nearby, setNearby] = useState<Aircraft[]>([]),
+    [trails, setTrails] = useState<FlightTrails>({}),
+    [selected, setSelected] = useState<Aircraft | null>(null),
+    [detailsData, setDetails] = useState<
+      FlightDetails & { matchedHex?: string }
+    >({}),
+    [status, setStatus] = useState<"connecting" | "live" | "demo">(
+      "connecting",
+    ),
+    [settingsOpen, setSettingsOpen] = useState(false),
+    [lastUpdate, setLastUpdate] = useState<Date | null>(null),
+    [clock, setClock] = useState(0),
+    [sound, setSound] = useState(false),
+    [savedViews, setSavedViews] = useState<SavedView[]>([]),
+    [viewName, setViewName] = useState(""),
+    [activeViewId, setActiveViewId] = useState<string | null>(null),
+    [trackingViewId, setTrackingViewId] = useState<string | null>(null);
+  const [mapMode, setMapMode] = useState<"earth" | "sky">("sky"),
+    [logbookOpen, setLogbookOpen] = useState(false),
+    [mobilePane, setMobilePane] = useState<"sky" | "flight">("sky");
+  const [history, setHistory] = useState<Sighting[]>([]),
+    [ready, setReady] = useState(false),
+    [storageError, setStorageError] = useState("");
+  const details: FlightDetails =
+    detailsData.matchedHex === selected?.hex ? detailsData : {};
+  const historyRef = useRef<Sighting[]>([]);
+  const configRef = useRef(config);
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+  const seen = useRef(new Set<string>()),
+    selectedRef = useRef<string | null>(null),
+    audioRef = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try {
+        setTrackingViewId(localStorage.getItem("windowwatch-active-view"));
+        const s = localStorage.getItem("dca-window-config"),
+          views = localStorage.getItem("dca-saved-views");
+        if (s) {
+          const p = { ...DEFAULT_CONFIG, ...JSON.parse(s) };
+          setConfig(p);
+          setDraft(p);
+        }
+        if (views) {
+          const v = JSON.parse(views);
+          if (Array.isArray(v)) setSavedViews(v);
+        }
+        const h = readHistory(localStorage.getItem(HISTORY_KEY));
+        historyRef.current = h;
+        setHistory(h);
+      } catch {
+        setStorageError(
+          "Browser storage is unavailable. Sightings remain in memory; export your logbook before closing.",
+        );
+      }
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const persistSightings = useCallback(
+    (viewId: string, visible: Aircraft[]) => {
+      if (!visible.length) return;
+      const next = recordSightings(
+        historyRef.current,
+        viewId,
+        visible,
+        Date.now(),
+      );
+      historyRef.current = next;
+      setHistory(next);
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        setStorageError(
+          "The logbook could not be saved to browser storage. Export it to keep a copy.",
+        );
+      }
+    },
+    [],
+  );
+  const currentViewId =
+    trackingViewId ||
+    savedViews.find((v) => JSON.stringify(v.config) === JSON.stringify(config))
+      ?.id ||
+    `location:${config.lat},${config.lon},${config.bearing},${config.width},${config.range},${config.minAltitude}`;
+
+  useEffect(() => {
+    queueMicrotask(() => setClock(Date.now()));
+    const id = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const isInView = useCallback((ac: Aircraft, c: Config) => {
+    if (ac.lat == null || ac.lon == null) return false;
+    return (
+      haversineNm(c.lat, c.lon, ac.lat, ac.lon) <= c.range &&
+      Math.abs(
+        normalizeAngle(bearingTo(c.lat, c.lon, ac.lat, ac.lon) - c.bearing),
+      ) <=
+        c.width / 2 &&
+      altitude(ac) >= c.minAltitude
+    );
+  }, []);
+  const fetchAircraft = useCallback(async () => {
+    if (!ready) return;
+    const requestViewId = currentViewId;
+    const requestConfig = config;
+    try {
+      const r = await fetch(
+        `/api/aircraft?lat=${config.lat}&lon=${config.lon}&range=${Math.max(config.range, 5)}`,
+        { cache: "no-store" },
+      );
+      if (!r.ok) throw 0;
+      const d = (await r.json()) as { ac?: Aircraft[] };
+      if (configRef.current !== requestConfig) return;
+      const near = (d.ac ?? [])
+          .filter(
+            (a) =>
+              a.lat != null &&
+              a.lon != null &&
+              altitude(a) >= config.minAltitude,
+          )
+          .sort((a, b) => (a.dst ?? 99) - (b.dst ?? 99)),
+        visible = near.filter((a) => isInView(a, config)),
+        newcomers = visible.filter((a) => !seen.current.has(a.hex));
+      visible.forEach((a) => seen.current.add(a.hex));
+      setNearby(near);
+      setTrails((previous) => recordTrails(previous, near, Date.now()));
+      persistSightings(requestViewId, visible);
+      setAircraft(visible);
+      const next =
+        newcomers[0] ??
+        visible.find((a) => a.hex === selectedRef.current) ??
+        visible[0] ??
+        null;
+      if (next && next.hex !== selectedRef.current) {
+        selectedRef.current = next.hex;
+        setSelected(next);
+        if (sound && audioRef.current) {
+          const ctx = audioRef.current,
+            o = ctx.createOscillator(),
+            g = ctx.createGain();
+          o.frequency.setValueAtTime(620, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.16);
+          g.gain.setValueAtTime(0.0001, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+          o.connect(g).connect(ctx.destination);
+          o.start();
+          o.stop(ctx.currentTime + 0.27);
+        }
+      } else if (next) setSelected(next);
+      else {
+        selectedRef.current = null;
+        setSelected(null);
+      }
+      setStatus("live");
+      setLastUpdate(new Date());
+    } catch {
+      if (configRef.current !== requestConfig) return;
+      const fallback = DEMO.map((a, i) => ({
+        ...a,
+        lat: config.lat + 0.02 + i * 0.015,
+        lon: config.lon + 0.003 - i * 0.01,
+      }));
+      setNearby([]);
+      setAircraft(fallback);
+      selectedRef.current = fallback[0].hex;
+      setSelected(fallback[0]);
+      setStatus("demo");
+      setLastUpdate(new Date());
+    }
+  }, [config, isInView, sound, ready, currentViewId, persistSightings]);
+  useEffect(() => {
+    seen.current.clear();
+    selectedRef.current = null;
+    queueMicrotask(() => {
+      setSelected(null);
+      void fetchAircraft();
+    });
+    const id = window.setInterval(fetchAircraft, 10000);
+    return () => clearInterval(id);
+  }, [fetchAircraft]);
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false,
+      busy = false;
+    const poll = async () => {
+      if (busy) return;
+      busy = true;
+      await Promise.allSettled(
+        savedViews
+          .filter((v) => v.id !== currentViewId)
+          .map(async (v) => {
+            const c = v.config;
+            const r = await fetch(
+              `/api/aircraft?lat=${c.lat}&lon=${c.lon}&range=${c.range}`,
+              { cache: "no-store" },
+            );
+            if (!r.ok) return;
+            const d = (await r.json()) as { ac?: Aircraft[] };
+            if (!cancelled)
+              persistSightings(
+                v.id,
+                (d.ac ?? []).filter((a) => isInView(a, c)),
+              );
+          }),
+      );
+      busy = false;
+    };
+    poll();
+    const timer = setInterval(poll, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [ready, savedViews, currentViewId, isInView, persistSightings]);
+  const selectedHex = selected?.hex,
+    selectedFlight = selected?.flight,
+    selectedRegistration = selected?.r;
+  useEffect(() => {
+    const c = new AbortController();
+    queueMicrotask(() => {
+      if (!c.signal.aborted) setDetails({});
+    });
+    if (selectedHex)
+      fetch(
+        `/api/details?callsign=${encodeURIComponent(callsign(selectedFlight))}&registration=${encodeURIComponent(selectedRegistration ?? "")}`,
+        { signal: c.signal },
+      )
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((value) => {
+          if (!c.signal.aborted)
+            setDetails({
+              ...(value as FlightDetails),
+              matchedHex: selectedHex,
+            });
+        })
+        .catch(() => {
+          if (!c.signal.aborted) setDetails({});
+        });
+    return () => c.abort();
+  }, [selectedHex, selectedFlight, selectedRegistration]);
+
+  const select = (a: Aircraft) => {
+      selectedRef.current = a.hex;
+      setSelected(a);
+    },
+    known = selected?.t ? TYPE_NAMES[selected.t] : undefined,
+    manufacturer = details.aircraft?.manufacturer || known?.[0] || "Aircraft",
+    model =
+      details.aircraft?.type || known?.[1] || selected?.t || "Model unknown",
+    motion = climbState(selected?.baro_rate),
+    MotionIcon = motion.icon,
+    origin = details.route?.origin,
+    destination = details.route?.destination;
+  const save = () => {
+    const s = {
+      ...draft,
+      range: Math.max(1, Math.min(50, draft.range)),
+      width: Math.max(10, Math.min(180, draft.width)),
+    };
+    setConfig(s);
+    setTrackingViewId(activeViewId);
+    if (activeViewId)
+      localStorage.setItem("windowwatch-active-view", activeViewId);
+    else localStorage.removeItem("windowwatch-active-view");
+    localStorage.setItem("dca-window-config", JSON.stringify(s));
+    setSettingsOpen(false);
+  };
+  const storeViews = (next: SavedView[]) => {
+    setSavedViews(next);
+    localStorage.setItem("dca-saved-views", JSON.stringify(next));
+  };
+  const saveNamedView = () => {
+    const name = viewName.trim() || `Window view ${savedViews.length + 1}`,
+      existing = savedViews.find((v) => v.id === activeViewId);
+    if (existing) {
+      storeViews(
+        savedViews.map((v) =>
+          v.id === existing.id
+            ? { ...v, name, config: { ...draft }, updatedAt: Date.now() }
+            : v,
+        ),
+      );
+    } else {
+      const item = {
+        id: crypto.randomUUID(),
+        name,
+        config: { ...draft },
+        updatedAt: Date.now(),
+      };
+      if (
+        currentViewId.startsWith("location:") &&
+        JSON.stringify(draft) === JSON.stringify(config)
+      ) {
+        const next = historyRef.current.map((s) =>
+          s.viewId === currentViewId ? { ...s, viewId: item.id } : s,
+        );
+        historyRef.current = next;
+        setHistory(next);
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+        } catch {
+          setStorageError(
+            "Could not save logbook. Export a copy before closing.",
+          );
+        }
+      }
+      if (JSON.stringify(draft) === JSON.stringify(config)) {
+        setTrackingViewId(item.id);
+        localStorage.setItem("windowwatch-active-view", item.id);
+      }
+      storeViews([...savedViews, item]);
+      setActiveViewId(item.id);
+    }
+    setViewName(name);
+  };
+  const loadSavedView = (view: SavedView) => {
+    setDraft({ ...view.config });
+    setViewName(view.name);
+    setActiveViewId(view.id);
+  };
+  const deleteSavedView = (id: string) => {
+    storeViews(savedViews.filter((v) => v.id !== id));
+    if (trackingViewId === id) {
+      setTrackingViewId(null);
+      localStorage.removeItem("windowwatch-active-view");
+    }
+    if (activeViewId === id) {
+      setActiveViewId(null);
+      setViewName("");
+    }
+  };
+  const useLocation = (done?: (next: Config) => void) =>
+    navigator.geolocation?.getCurrentPosition(({ coords }) =>
+      setDraft((d) => {
+        const next = {
+          ...d,
+          lat: +coords.latitude.toFixed(6),
+          lon: +coords.longitude.toFixed(6),
+        };
+        done?.(next);
+        return next;
+      }),
+    );
+  useEffect(() => {
+    const close = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSettingsOpen(false);
+        setLogbookOpen(false);
+      }
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
+  useEffect(() => {
+    if (!settingsOpen && !logbookOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = document.querySelector<HTMLElement>(
+      '.modal-backdrop [role="dialog"]',
+    );
+    if (!dialog) return;
+    const elements = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not(:disabled),input,select,a[href],[tabindex="0"]',
+        ),
+      ).filter((el) => el.getClientRects().length);
+    elements()[0]?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const items = elements(),
+        first = items[0],
+        last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    dialog.addEventListener("keydown", trap);
+    return () => {
+      dialog.removeEventListener("keydown", trap);
+      previous?.focus();
+    };
+  }, [settingsOpen, logbookOpen]);
+  const viewLabel =
+    savedViews.find((v) => v.id === currentViewId)?.name || "Current window";
+  const viewHistory = history.filter((s) => s.viewId === currentViewId);
+  const typeCount = new Set(viewHistory.map((s) => s.type)).size;
+  const recentPasses = [...viewHistory]
+    .sort((a, b) => b.firstSeen - a.firstSeen)
+    .slice(0, 4);
+  const openViews = () => {
+    setDraft(config);
+    const v = savedViews.find((v) => v.id === currentViewId);
+    setActiveViewId(v?.id ?? null);
+    setViewName(v?.name ?? "");
+    setSettingsOpen(true);
+  };
+  const switchView = (id: string) => {
+    const v = savedViews.find((v) => v.id === id);
+    if (!v) return;
+    setConfig({ ...v.config });
+    setTrackingViewId(v.id);
+    localStorage.setItem("dca-window-config", JSON.stringify(v.config));
+    localStorage.setItem("windowwatch-active-view", v.id);
+  };
+  return (
+    <main className={`ambient-app mobile-${mobilePane}`} data-theme="dark">
+      <nav className="instrument-rail" aria-label="Dashboard navigation">
+        <div className="window-mark" title="whatplaneisthat?">
+          <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <rect
+              x="3"
+              y="3"
+              width="22"
+              height="22"
+              rx="7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M3 14h22M14 3v22M7 19l14-11-9 14 1-8-6 5Z"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              fill="#171719"
+            />
+          </svg>
+        </div>
+        <button
+          className={mapMode === "earth" ? "rail-active" : ""}
+          onClick={() => setMapMode("earth")}
+          aria-label="Earth view"
+          title="Earth view"
+        >
+          <Globe2 size={19} />
+        </button>
+        <button
+          className={mapMode === "sky" ? "rail-active" : ""}
+          onClick={() => setMapMode("sky")}
+          aria-label="Local sky"
+          title="Local sky"
+        >
+          <RadarIcon size={19} />
+        </button>
+        <button
+          onClick={() => setLogbookOpen(true)}
+          aria-label="Open logbook"
+          title="Aircraft logbook"
+        >
+          <BookOpen size={18} />
+        </button>
+        <div className="rail-bottom">
+          <button
+            className={sound ? "rail-active" : ""}
+            aria-label="Toggle aircraft alerts"
+            title={sound ? "Mute aircraft alerts" : "Enable aircraft alerts"}
+            onClick={() => {
+              const next = !sound;
+              if (next && !audioRef.current)
+                audioRef.current = new AudioContext();
+              audioRef.current?.resume();
+              setSound(next);
+            }}
+          >
+            <Radio size={18} />
+          </button>
+          <button
+            onClick={openViews}
+            aria-label="Views"
+            title="Configure views"
+          >
+            <Settings2 size={18} />
+          </button>
+        </div>
+      </nav>
+      <header className="ambient-header">
+        <div className="product-name">
+          <strong>
+            whatplaneisthat<span>?</span>
+          </strong>
+          <span>A sky worth watching</span>
+        </div>
+        <div className="view-switcher">
+          <MapPin size={14} />
+          <select
+            aria-label="Active viewpoint"
+            value={currentViewId}
+            onChange={(e) => switchView(e.target.value)}
+          >
+            {!savedViews.some((v) => v.id === currentViewId) && (
+              <option value={currentViewId}>Current window</option>
+            )}
+            {savedViews.map((v) => (
+              <option value={v.id} key={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={12} />
+        </div>
+        <div className="ambient-time">
+          <span>
+            {clock
+              ? new Date(clock).toLocaleTimeString(undefined, {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                })
+              : "--:--"}
+          </span>
+          <small>
+            {clock
+              ? new Date(clock).toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                })
+              : "Local time"}
+          </small>
+        </div>
+        <button
+          className="fullscreen-control"
+          aria-label="Toggle fullscreen"
+          title="Fullscreen display"
+          onClick={() => {
+            if (document.fullscreenElement) void document.exitFullscreen();
+            else
+              void document.documentElement.requestFullscreen().catch(() => {});
+          }}
+        >
+          <Maximize2 size={16} />
+        </button>
+        <button
+          className="mobile-view-settings"
+          aria-label="Views"
+          onClick={openViews}
+        >
+          <Settings2 size={17} />
+        </button>
+      </header>
+      <div className="mobile-tabs">
+        <button
+          className={mobilePane === "sky" ? "selected-tab" : ""}
+          onClick={() => setMobilePane("sky")}
+        >
+          Airspace
+        </button>
+        <button
+          className={mobilePane === "flight" ? "selected-tab" : ""}
+          onClick={() => setMobilePane("flight")}
+        >
+          Aircraft{aircraft.length ? ` · ${aircraft.length}` : ""}
+        </button>
+        <button onClick={() => setLogbookOpen(true)}>Logbook</button>
+      </div>
+      <section className="geography-pane" aria-label="Airspace observation">
+        <div className="stage-heading">
+          <div>
+            <h1>Your airspace</h1>
+            <p>
+              {aircraft.length === 0
+                ? "Watching for the next arrival"
+                : `${aircraft.length} aircraft ${aircraft.length === 1 ? "is" : "are"} passing your window`}
+            </p>
+          </div>
+          <div className="stage-tabs" aria-label="Airspace display">
+            <button
+              className={mapMode === "earth" ? "selected-tab" : ""}
+              onClick={() => setMapMode("earth")}
+            >
+              Earth
+            </button>
+            <button
+              className={mapMode === "sky" ? "selected-tab" : ""}
+              onClick={() => setMapMode("sky")}
+            >
+              Local sky
+            </button>
+          </div>
+        </div>
+        <div
+          className={`observation-stage ${mapMode === "sky" ? "show-local" : ""}`}
+        >
+          {mapMode === "earth" ? (
+            <Globe
+              lat={config.lat}
+              lon={config.lon}
+              flight={status === "live" ? selected?.flight?.trim() : undefined}
+              route={
+                status === "live" &&
+                typeof origin?.latitude === "number" &&
+                typeof origin.longitude === "number" &&
+                typeof destination?.latitude === "number" &&
+                typeof destination.longitude === "number"
+                  ? {
+                      from: [origin.longitude, origin.latitude],
+                      to: [destination.longitude, destination.latitude],
+                      fromLabel:
+                        origin.iata_code || origin.icao_code || "Origin",
+                      toLabel:
+                        destination.iata_code ||
+                        destination.icao_code ||
+                        "Destination",
+                    }
+                  : undefined
+              }
+            />
+          ) : (
+            <LocalAirspace
+              config={config}
+              aircraft={status === "live" ? nearby : []}
+              visibleAircraft={aircraft}
+              selectedHex={selected?.hex}
+              trails={trails}
+              onSelect={select}
+            />
+          )}
+          <div
+            className={`geo-coordinate ${mapMode === "sky" ? "map-hidden-overlay" : ""}`}
+          >
+            <span>
+              {Math.abs(config.lat).toFixed(4)}°{config.lat >= 0 ? "N" : "S"}
+              <br />
+              {Math.abs(config.lon).toFixed(4)}°{config.lon >= 0 ? "E" : "W"}
+            </span>
+            <small>Observer position</small>
+          </div>
+          <div
+            className={`view-direction ${mapMode === "sky" ? "map-hidden-overlay" : ""}`}
+          >
+            <Compass size={15} />
+            <span>
+              {compass(config.bearing)}
+              <small>{config.range} nm range</small>
+            </span>
+          </div>
+        </div>
+        <div className="stage-footnote">
+          <span>
+            <i
+              className={
+                status === "live" ? "signal-dot" : "signal-dot offline"
+              }
+            />
+            {status === "live"
+              ? "Live ADS-B"
+              : status === "demo"
+                ? "Demo preview · feed unavailable"
+                : "Acquiring signal"}
+          </span>
+          <button aria-label="Refresh aircraft" onClick={fetchAircraft}>
+            <RotateCw size={12} />
+            <span>Updated {relativeTime(lastUpdate, clock)}</span>
+          </button>
+          <span className="map-scale">
+            {mapMode === "earth"
+              ? "Orthographic projection"
+              : "Distances in nautical miles"}
+          </span>
+        </div>
+      </section>
+      <aside className="flight-pane" aria-label="Selected aircraft">
+        <div className="flight-heading">
+          <span>{selected ? "In focus" : "Standing by"}</span>
+          <span className="focus-status">
+            <i />
+            {status === "demo"
+              ? "Demo"
+              : status === "live"
+                ? "Live"
+                : "Connecting"}
+          </span>
+        </div>
+        {selected ? (
+          <>
+            <div className="flight-identity" key={selected.hex}>
+              <div>
+                <h2>{callsign(selected.flight)}</h2>
+                <p>
+                  {details.route?.airline?.name ||
+                    details.aircraft?.registered_owner ||
+                    selected.r ||
+                    "Unidentified operator"}
+                </p>
+              </div>
+              <span>
+                {selected.t || details.aircraft?.icao_type || "Type pending"}
+              </span>
+            </div>
+            <div className="aircraft-display">
+              <AircraftImage
+                key={`${selected.hex}:${selected.r || ""}`}
+                registration={selected.r}
+                type={selected.t || details.aircraft?.icao_type}
+                exactPhoto={details.aircraft?.url_photo}
+                exactThumbnail={details.aircraft?.url_photo_thumbnail}
+                model={`${manufacturer} ${model}`}
+              />
+              <div className="aircraft-caption">
+                <strong>
+                  {manufacturer} {model}
+                </strong>
+                <span>{selected.r || selected.hex.toUpperCase()}</span>
+              </div>
+            </div>
+            <div className="flight-route">
+              <div>
+                <span>{origin?.iata_code || origin?.icao_code || "—"}</span>
+                <small>{origin?.municipality || "Origin unavailable"}</small>
+              </div>
+              <div className="route-track">
+                <span />
+                <Plane size={15} />
+                <span />
+              </div>
+              <div>
+                <span>
+                  {destination?.iata_code || destination?.icao_code || "—"}
+                </span>
+                <small>
+                  {destination?.municipality || "Destination unavailable"}
+                </small>
+              </div>
+            </div>
+            <div className="telemetry">
+              <div>
+                <span>Altitude</span>
+                <strong>
+                  {typeof selected.alt_baro === "number"
+                    ? selected.alt_baro.toLocaleString()
+                    : "—"}
+                  <small> ft</small>
+                </strong>
+              </div>
+              <div>
+                <span>Ground speed</span>
+                <strong>
+                  {selected.gs != null ? Math.round(selected.gs) : "—"}
+                  <small> kt</small>
+                </strong>
+              </div>
+              <div>
+                <span>Distance</span>
+                <strong>
+                  {selected.lat != null && selected.lon != null
+                    ? haversineNm(
+                        config.lat,
+                        config.lon,
+                        selected.lat,
+                        selected.lon,
+                      ).toFixed(1)
+                    : "—"}
+                  <small> nm</small>
+                </strong>
+              </div>
+              <div>
+                <span>Vertical rate</span>
+                <strong>
+                  {selected.baro_rate != null
+                    ? `${selected.baro_rate > 0 ? "+" : ""}${selected.baro_rate.toLocaleString()}`
+                    : "—"}
+                  <small> ft/min</small>
+                </strong>
+              </div>
+            </div>
+            <div className="flight-meta">
+              <span>
+                <Navigation size={13} /> {compass(selected.track)}
+              </span>
+              <span>
+                <MotionIcon size={13} /> {motion.label}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="standby-aircraft">
+            <PlaneModel color="#81817d" />
+            <h2>The sky is yours.</h2>
+            <p>
+              The next aircraft to enter this view will appear here
+              automatically.
+            </p>
+            <button onClick={openViews}>
+              Adjust viewpoint <ChevronRight size={13} />
+            </button>
+          </div>
+        )}
+        <div className="traffic-panel">
+          <div className="panel-heading">
+            <h3>Passing through</h3>
+            <span>{aircraft.length} in view</span>
+          </div>
+          <div className="traffic-list">
+            {aircraft.length ? (
+              aircraft.slice(0, 4).map((ac) => (
+                <button
+                  key={ac.hex}
+                  className={selected?.hex === ac.hex ? "selected-traffic" : ""}
+                  onClick={() => select(ac)}
+                >
+                  <Plane size={14} />
+                  <span>
+                    <strong>{callsign(ac.flight)}</strong>
+                    <small>
+                      {ac.t || "Type pending"} · {ac.r || ac.hex.toUpperCase()}
+                    </small>
+                  </span>
+                  <span className="traffic-alt">
+                    {altitude(ac).toLocaleString()}
+                    <small>ft</small>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="traffic-empty">No aircraft in this viewing cone.</p>
+            )}
+          </div>
+        </div>
+        {storageError && (
+          <p className="inline-storage-warning" role="alert">
+            {storageError}
+          </p>
+        )}
+      </aside>
+      <section className="recent-pane" aria-label="Recent sightings">
+        <div className="recent-heading">
+          <div>
+            <h3>Seen from this window</h3>
+            <span>
+              {typeCount} aircraft {typeCount === 1 ? "type" : "types"} ·{" "}
+              {viewHistory.length}{" "}
+              {viewHistory.length === 1 ? "pass" : "passes"} recorded
+            </span>
+          </div>
+          <button onClick={() => setLogbookOpen(true)}>
+            Open logbook <ArrowUpRight size={14} />
+          </button>
+        </div>
+        <div className="recent-sightings">
+          {recentPasses.length ? (
+            recentPasses.map((s) => (
+              <button key={s.id} onClick={() => setLogbookOpen(true)}>
+                <span className="recent-type">
+                  {s.type === "UNKNOWN" ? "—" : s.type}
+                </span>
+                <span>
+                  <strong>{TYPE_NAMES[s.type]?.join(" ") || s.type}</strong>
+                  <small>
+                    {s.flight} · {s.registration}
+                  </small>
+                </span>
+                <time dateTime={new Date(s.firstSeen).toISOString()}>
+                  {new Date(s.firstSeen).toLocaleTimeString(undefined, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  })}
+                </time>
+              </button>
+            ))
+          ) : (
+            <div className="recent-empty">
+              <BookOpen size={19} />
+              <span>
+                Your collection starts with the next live aircraft.
+                <small>
+                  First sightings and returning flights are saved automatically.
+                </small>
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+      <footer className="ambient-footer">
+        <span>
+          <i
+            className={status === "live" ? "signal-dot" : "signal-dot offline"}
+          />{" "}
+          {status === "live"
+            ? "Listening to your sky"
+            : status === "demo"
+              ? "Demo aircraft · no sightings recorded"
+              : "Connecting to ADS-B"}
+        </span>
+        <span>
+          {viewLabel} <span className="footer-separator">/</span> {config.width}
+          ° field of view
+        </span>
+        <span className="data-attribution">
+          <a href="https://www.adsb.lol/" target="_blank" rel="noreferrer">
+            adsb.lol
+          </a>
+          <span>·</span>
+          <a href="https://www.adsbdb.com/" target="_blank" rel="noreferrer">
+            ADSBDB
+          </a>
+          <span>·</span>
+          <a
+            href="https://www.naturalearthdata.com/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Natural Earth
+          </a>
+        </span>
+      </footer>
+      {logbookOpen && (
+        <div
+          className="modal-backdrop logbook-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setLogbookOpen(false);
+          }}
+        >
+          <section
+            className="logbook-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Aircraft logbook"
+          >
+            <button
+              className="close-logbook"
+              onClick={() => setLogbookOpen(false)}
+              aria-label="Close logbook"
+            >
+              <X size={18} />
+            </button>
+            <Logbook
+              history={history}
+              views={[
+                { id: currentViewId, name: viewLabel },
+                ...savedViews.filter((v) => v.id !== currentViewId),
+              ]}
+              names={TYPE_NAMES}
+              storageError={storageError}
+            />
+          </section>
+        </div>
+      )}
+      {settingsOpen && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSettingsOpen(false);
+          }}
+        >
+          <section
+            className="settings-modal map-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+          >
+            <div className="modal-header">
+              <div>
+                <span>VIEW CALIBRATION</span>
+                <h2 id="settings-title">Place your window view</h2>
+                <p>
+                  Put the pin at your window, then aim the orange viewing cone
+                  toward the sky you can see.
+                </p>
+              </div>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                aria-label="Close settings"
+              >
+                <X />
+              </button>
+            </div>
+            {savedViews.length > 0 && (
+              <div className="saved-views">
+                <div className="saved-views-title">
+                  <Bookmark size={14} />
+                  <span>SAVED VIEWS</span>
+                </div>
+                <div className="saved-view-list">
+                  {savedViews.map((view) => (
+                    <div
+                      key={view.id}
+                      className={activeViewId === view.id ? "active" : ""}
+                    >
+                      <button
+                        className="saved-view-load"
+                        onClick={() => loadSavedView(view)}
+                      >
+                        <strong>{view.name}</strong>
+                        <span>
+                          {compass(view.config.bearing)} · {view.config.width}°
+                          · {view.config.range} NM
+                        </span>
+                      </button>
+                      <button
+                        className="saved-view-delete"
+                        onClick={() => deleteSavedView(view.id)}
+                        aria-label={`Delete ${view.name}`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <MapPicker
+              value={draft}
+              onChange={setDraft}
+              onUseLocation={useLocation}
+            />
+            <div className="control-grid">
+              <label>
+                VIEW WIDTH
+                <span>
+                  <input
+                    type="number"
+                    min="10"
+                    max="180"
+                    value={draft.width}
+                    onChange={(e) =>
+                      setDraft({ ...draft, width: +e.target.value })
+                    }
+                  />{" "}
+                  degrees
+                </span>
+              </label>
+              <label>
+                VISIBLE RANGE
+                <span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={draft.range}
+                    onChange={(e) =>
+                      setDraft({ ...draft, range: +e.target.value })
+                    }
+                  />{" "}
+                  nautical miles
+                </span>
+              </label>
+              <label>
+                MINIMUM ALTITUDE
+                <span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={draft.minAltitude}
+                    onChange={(e) =>
+                      setDraft({ ...draft, minAltitude: +e.target.value })
+                    }
+                  />{" "}
+                  feet
+                </span>
+              </label>
+            </div>
+            <div className="save-view-row">
+              <div>
+                <label htmlFor="view-name">NAME THIS VIEW</label>
+                <input
+                  id="view-name"
+                  value={viewName}
+                  onChange={(e) => setViewName(e.target.value)}
+                  placeholder="e.g. Living room window"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveNamedView();
+                  }}
+                />
+              </div>
+              <button onClick={saveNamedView}>
+                <Save size={15} />
+                {activeViewId ? "Update saved view" : "Save as a view"}
+              </button>
+            </div>
+            <div className="modal-tip">
+              <Navigation size={18} />
+              <p>
+                <strong>How to aim:</strong> drag the orange arrow until the
+                cone points out through your window. Widen the view if you can
+                see a broad stretch of sky.
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button
+                onClick={() => {
+                  setDraft(DEFAULT_CONFIG);
+                  setActiveViewId(null);
+                  setViewName("");
+                }}
+              >
+                Reset to DCA
+              </button>
+              <button className="primary" onClick={save}>
+                Use this view
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </main>
+  );
 }
