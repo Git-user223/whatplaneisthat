@@ -155,127 +155,6 @@ function relativeTime(date: Date | null, now: number) {
   return s < 2 ? "just now" : `${s}s ago`;
 }
 
-function PlaneModel({
-  aircraft,
-  color = "#f05232",
-}: {
-  aircraft?: Aircraft;
-  color?: string;
-}) {
-  const heli = aircraft?.t?.startsWith("H") || aircraft?.category === "A7";
-  if (heli)
-    return (
-      <svg
-        viewBox="0 0 560 260"
-        className="plane-model"
-        role="img"
-        aria-label="Helicopter model illustration"
-      >
-        <g transform="translate(280 130) rotate(-8) translate(-280 -130)">
-          <path
-            d="M118 142h324"
-            stroke="currentColor"
-            strokeWidth="9"
-            strokeLinecap="round"
-            opacity=".16"
-          />
-          <path d="M266 52h24v72h-24z" fill={color} />
-          <path
-            d="M92 46h372"
-            stroke={color}
-            strokeWidth="10"
-            strokeLinecap="round"
-          />
-          <path
-            d="M137 128c28-54 84-67 157-53 48 9 78 36 82 77 3 31-14 51-52 53H177c-55 0-73-30-40-77Z"
-            fill="#f8fbff"
-            stroke="#b8c3cc"
-            strokeWidth="3"
-          />
-          <path
-            d="M327 89c27 12 43 31 48 59h-76l-12-65c15 0 28 2 40 6Z"
-            fill="#17232c"
-          />
-          <path
-            d="M376 151l124-26 8 12-111 52-21-38Z"
-            fill="#e5eaf0"
-            stroke="#a8b4be"
-            strokeWidth="3"
-          />
-          <circle
-            cx="497"
-            cy="132"
-            r="29"
-            fill="none"
-            stroke={color}
-            strokeWidth="5"
-          />
-          <path d="M497 103v58M468 132h58" stroke={color} strokeWidth="4" />
-          <path
-            d="M170 210h189"
-            stroke="#5d6870"
-            strokeWidth="7"
-            strokeLinecap="round"
-          />
-        </g>
-      </svg>
-    );
-  return (
-    <svg
-      viewBox="0 0 640 280"
-      className="plane-model"
-      role="img"
-      aria-label="Aircraft model illustration"
-    >
-      <defs>
-        <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff" />
-          <stop offset=".72" stopColor="#e9eef2" />
-          <stop offset="1" stopColor="#c5cfd6" />
-        </linearGradient>
-      </defs>
-      <ellipse
-        cx="320"
-        cy="237"
-        rx="215"
-        ry="16"
-        fill="#163047"
-        opacity=".12"
-      />
-      <g>
-        <path
-          d="M65 153c5-18 24-30 53-34l137-18L363 24c11-8 29-12 45-10l-54 82 144-7c34-2 65 11 82 33l14 18-16 17c-21 23-50 33-88 29l-137-13 42 82c-15 3-31-2-42-12l-102-79-131-5c-31-1-52-10-55-25Z"
-          fill="url(#body)"
-          stroke="#9ba9b4"
-          strokeWidth="3"
-        />
-        <path
-          d="M76 135c85 11 171 10 258 4 115-7 197-3 249 4l-5 14c-102-6-185-4-250 4-100 12-184 7-251-8Z"
-          fill={color}
-        />
-        <path d="M492 94l-30-60c15 2 26 8 33 18l35 42Z" fill={color} />
-        <path d="M132 118l-16-49c15-1 29 5 36 16l24 27Z" fill={color} />
-        {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => (
-          <rect
-            key={n}
-            x={208 + n * 31}
-            y="115"
-            width="15"
-            height="8"
-            rx="4"
-            fill="#263c4d"
-          />
-        ))}
-        <path d="M522 109c30 3 49 12 59 26l-70-4Z" fill="#243c4e" />
-        <ellipse cx="359" cy="183" rx="35" ry="15" fill="#8c9ba5" />
-        <ellipse cx="359" cy="181" rx="26" ry="9" fill="#263944" />
-        <ellipse cx="230" cy="177" rx="31" ry="14" fill="#8c9ba5" />
-        <ellipse cx="230" cy="175" rx="23" ry="8" fill="#263944" />
-      </g>
-    </svg>
-  );
-}
-
 function sectorPoints(c: Config) {
   const points: [number, number][] = [[c.lat, c.lon]];
   for (let i = 0; i <= 20; i++)
@@ -1251,7 +1130,12 @@ export default function Home() {
           </>
         ) : (
           <div className="standby-aircraft">
-            <PlaneModel color="#81817d" />
+            <Plane
+              className="standby-plane"
+              size={80}
+              strokeWidth={1.25}
+              aria-hidden="true"
+            />
             <h2>The sky is yours.</h2>
             <p>
               The next aircraft to enter this view will appear here

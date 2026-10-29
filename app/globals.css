@@ -836,9 +836,10 @@ select {
   min-height: 200px;
   text-align: center;
 }
-.standby-aircraft .plane-model {
-  height: 140px;
-  opacity: 0.7;
+.standby-aircraft .standby-plane {
+  width: 80px;
+  height: 80px;
+  color: var(--muted);
 }
 .standby-aircraft h2 {
   font-size: 24px;
@@ -2186,8 +2187,9 @@ select {
     text-align: left;
     margin-top: 12px;
   }
-  .standby-aircraft .plane-model {
-    height: 120px;
+  .standby-aircraft .standby-plane {
+    width: 64px;
+    height: 64px;
   }
   .traffic-panel {
     padding-top: 18px;
@@ -2634,8 +2636,8 @@ select {
   line-height: 1.6;
 }
 .aircraft-display {
-  height: clamp(135px, 21vh, 195px);
-  min-height: 112px;
+  height: clamp(170px, 25vh, 240px);
+  min-height: 130px;
   margin-top: 15px;
 }
 .aircraft-photo {
@@ -2661,21 +2663,7 @@ select {
   object-fit: cover;
   object-position: center 45%;
 }
-.photo-match-label {
-  position: absolute;
-  left: 8px;
-  top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #171719e8;
-  border: 1px solid #79737785;
-  border-radius: 3px;
-  color: #e8e4e4;
-  font-size: 10px;
-  padding: 4px 6px;
-  pointer-events: none;
-}
+
 .aircraft-photo figcaption {
   display: flex;
   align-items: center;
@@ -2724,8 +2712,8 @@ select {
 }
 @media (max-height: 800px) and (min-width: 701px) {
   .aircraft-display {
-    height: 125px;
-    min-height: 106px;
+    height: 155px;
+    min-height: 120px;
     margin-top: 10px;
   }
   .traffic-panel {
@@ -2740,7 +2728,7 @@ select {
 }
 @media (min-width: 1600px) {
   .aircraft-display {
-    height: clamp(160px, 22vh, 245px);
+    height: clamp(195px, 26vh, 285px);
   }
 }
 @media (max-width: 1100px) {
@@ -2835,8 +2823,8 @@ select {
     max-width: 160px;
   }
   .aircraft-display {
-    height: clamp(125px, 21vh, 195px);
-    min-height: 108px;
+    height: clamp(160px, 25vh, 235px);
+    min-height: 125px;
   }
   .aircraft-photo {
     height: calc(100% - 24px);
@@ -2844,17 +2832,14 @@ select {
 }
 @media (max-width: 700px) and (max-height: 740px) {
   .aircraft-display {
-    height: 110px;
-    min-height: 90px;
+    height: 135px;
+    min-height: 105px;
     margin-top: 8px;
   }
   .airspace-map-key > span {
     display: none;
   }
-  .photo-match-label {
-    font-size: 9px;
-    padding: 3px 5px;
-  }
+
   .aircraft-photo figcaption {
     font-size: 9px;
   }
@@ -2914,8 +2899,8 @@ select {
   padding: 18px 0;
 }
 .sighting-photo {
-  width: 200px;
-  height: 138px;
+  width: 230px;
+  height: 160px;
   flex: none;
   min-width: 0;
 }
@@ -2932,12 +2917,7 @@ select {
 .sighting-photo .aircraft-photo figcaption > a:first-child {
   max-width: 100%;
 }
-.sighting-photo .photo-match-label {
-  font-size: 11px;
-  padding: 3px 5px;
-  left: 6px;
-  top: 6px;
-}
+
 .sighting-description {
   min-width: 0;
   flex: 1;
@@ -2976,8 +2956,8 @@ select {
     gap: 10px;
   }
   .sighting-photo {
-    width: 170px;
-    height: 126px;
+    width: 195px;
+    height: 145px;
   }
   .sighting-description {
     flex-direction: column;
@@ -3011,19 +2991,14 @@ select {
     padding: 16px 0;
   }
   .sighting-photo {
-    width: 120px;
-    height: 122px;
+    width: 135px;
+    height: 135px;
   }
   .sighting-photo .aircraft-photo figcaption {
     font-size: 10px;
     min-height: 31px;
   }
-  .sighting-photo .photo-match-label {
-    font-size: 10px;
-    left: 4px;
-    top: 4px;
-    padding: 3px 4px;
-  }
+
   .sighting-description {
     gap: 10px;
     line-height: 1.6;
@@ -3044,7 +3019,7 @@ select {
   }
   .sighting-photo {
     width: 100%;
-    height: 165px;
+    height: 190px;
   }
   .sighting-description {
     width: 100%;
@@ -3058,8 +3033,5 @@ select {
     font-size: 11px;
     min-height: 17px;
     flex-wrap: nowrap;
-  }
-  .sighting-photo .photo-match-label {
-    font-size: 11px;
   }
 }

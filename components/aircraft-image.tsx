@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { CameraOff, ExternalLink } from "lucide-react";
+import { CameraOff } from "lucide-react";
 import { useState } from "react";
 import referencePhotos from "@/lib/aircraft-photos.json";
 type ReferencePhoto = {
@@ -101,15 +101,6 @@ export function AircraftImage({
                 )
               }
             />
-            <span className="photo-match-label">
-              {photo.exact
-                ? "Registration match"
-                : reference.label.toLowerCase().includes("family") ||
-                    reference.label.includes("Next Generation")
-                  ? "Family reference"
-                  : "Model reference"}
-              <ExternalLink size={10} />
-            </span>
           </a>
           <figcaption>
             {photo.exact ? (
