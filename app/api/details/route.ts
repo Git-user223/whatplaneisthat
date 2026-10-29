@@ -1,0 +1,4 @@
+import { NextRequest, NextResponse } from "next/server";
+export const dynamic="force-dynamic";
+async function getJson(url:string){const r=await fetch(url,{headers:{"User-Agent":"DCA-Window-Watch/1.0"},next:{revalidate:86400}});return r.ok?r.json():null}
+export async function GET(request:NextRequest){const c=(request.nextUrl.searchParams.get("callsign")||"").trim().replace(/[^A-Za-z0-9]/g,""),reg=(request.nextUrl.searchParams.get("registration")||"").trim().replace(/[^A-Za-z0-9-]/g,"");const[routeData,aircraftData]=await Promise.all([c?getJson(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(c)}`):null,reg?getJson(`https://api.adsbdb.com/v0/aircraft/${encodeURIComponent(reg)}`):null]);return NextResponse.json({route:routeData?.response?.flightroute??null,aircraft:aircraftData?.response?.aircraft??null},{headers:{"Cache-Control":"public, max-age=3600"}})}
